@@ -10,7 +10,7 @@ CFLAGS = -std=c++11 -Wall -g
 # Targets needed to bring the executable up to date
  
 main: main.o
-	$(CC) $(CFLAGS) -o main main.o
+	$(CC) $(CFLAGS) -o main main.o -lSDL2
  
 # The main.o target can be written more simply
  
