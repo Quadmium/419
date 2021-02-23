@@ -6,13 +6,24 @@
 #include "vec3.h"
 #include "ray.h"
 
+// Assigns a vec3 to char*, used for assigning float pixels to discrete images
+// img - target array
+// color - color to assign in [0,1] range
 void img_assign(char *img, const vec3 &color) {
   img[0] = 255.999 * color.e[0];
   img[1] = 255.999 * color.e[1];
   img[2] = 255.999 * color.e[2];
 }
 
+// Checks if a ray hits a sphere
+// center - the sphere center
+// radius - the sphere radius
+// r - ray to test
+// t0 - output for first hit
+// t1 - output for second hit
+// returns true if any hit found. Sets t0 to smaller t of hits, t1 to second t if found.
 bool hit_sphere(const point3& center, double radius, const Ray& r, double *t0, double *t1) {
+  // Adapted from lecture
   vec3 d = r.direction;
   vec3 d_unit = unit_vector(d);
   vec3 f = r.origin - center;
@@ -22,12 +33,14 @@ bool hit_sphere(const point3& center, double radius, const Ray& r, double *t0, d
 
   double b2_minus_4ac = 4 * a * (radius * radius - (f - dot(f, d_unit) * d_unit).length_squared());
 
+  // Return early for invaid determinant
   if (b2_minus_4ac < 0) {
     return false;
   }
 
   double q = -0.5 * (b + (b >= 0 ? 1 : -1) * std::sqrt(b2_minus_4ac));
 
+  // Calculate two solutions
   *t0 = c / q;
   *t1 = q / a;
 
@@ -51,6 +64,11 @@ bool hit_sphere(const point3& center, double radius, const Ray& r, double *t0, d
   return true;
 }
 
+// Checks if a ray hits a plane
+// anchor - anchor of plane
+// normal - normal of plane
+// r - ray to test
+// returns t of hit
 double hit_plane(const vec3 &anchor, const vec3 &normal, const Ray &r) {
   double denominator = dot(r.direction, normal);
   if (denominator == 0.0) {
@@ -60,6 +78,10 @@ double hit_plane(const vec3 &anchor, const vec3 &normal, const Ray &r) {
 }
 
 // https://en.wikipedia.org/wiki/M%C3%B6ller%E2%80%93Trumbore_intersection_algorithm
+// Check if a ray hits a triangle
+// r - ray to test
+// vertex0/1/2 - three vertices of triangle
+// returns t of hit, else -1
 double hit_triangle(const Ray &r, const vec3 &vertex0, const vec3 &vertex1, const vec3 &vertex2) {
     const float EPSILON = 0.0000001;
     vec3 edge1, edge2, h, s, q;
@@ -89,60 +111,82 @@ double hit_triangle(const Ray &r, const vec3 &vertex0, const vec3 &vertex1, cons
         return -1;
 }
 
-
+// Shoots a ray and either calculates color or if it hit an object
+// r - ray to test
+// hit - a pointer to write if a hit occured, if so doesn't try to calculate color
+// returns vec3 of color only if hit == nullptr
 vec3 shoot_ray(const Ray &r, bool *hit=nullptr) {
+  // Plane and light details
   vec3 anchor = {0, 0, 0};
   vec3 normal = {0, 1, 0};
   vec3 light = {10, 10, 10};
 
+  // Plane hit or not
   double plane_hit_time = hit_plane(anchor, normal, r);
 
-  vec3 v0 = {0.5, 0.5, -1};
-  vec3 v1 = {1.5, 0.5, -1};
-  vec3 v2 = {1.5, 1.5, -2};
+  // Triangle details
+  vec3 v0 = {0.2, 0, -1};
+  vec3 v1 = {1.5, 0, -1};
+  vec3 v2 = {1, 1.5, -2};
 
+  // Triangle hit or not
   double triangle_hit_time = hit_triangle(r, v0, v1, v2);
 
   double t0, t1;
+  // If hit sphere and t is smallest compared to the other two
   if (hit_sphere({0, 0.5, -2}, 0.5, r, &t0, &t1) && (plane_hit_time <= 0 || t0 <= plane_hit_time) && (triangle_hit_time <= 0 || t0 <= triangle_hit_time)) {
+    // Early out if only looking for collision
     if (hit != nullptr) {
       *hit = true;
       return {0, 0, 0};
     }
+
+    // Calculate diffuse lighting
     vec3 normal = unit_vector(r.at(t0) - vec3(0,0.5,-2));
     vec3 sphere_hit = r.at(t0);
     vec3 to_light = unit_vector(light - sphere_hit);
     double diffuse = std::max(dot(to_light, normal), 0.0);
+
+    // Check if hit anything to cast shadow
     bool hit_shadow;
     shoot_ray({sphere_hit + normal * 0.001, to_light}, &hit_shadow);
     if (hit_shadow) {
       return {0, 0, 0};
     }
+
     return diffuse * vec3(0, 0.8, 0.8);
   }
 
+  // If hit triangle and t is smallest compared to rest
   if (triangle_hit_time > 0 && (plane_hit_time <= 0 || triangle_hit_time <= plane_hit_time)) {
+    // Early out
     if (hit != nullptr) {
       *hit = true;
       return {0, 0, 0};
     }
 
+    // Calculate triangle normal
     vec3 e1 = v0 - v1;
     vec3 e2 = v2 - v1;
-
     vec3 tri_normal = unit_vector(cross(e2, e1));
+
+    // Calculate lighting
     vec3 tri_hit = r.at(triangle_hit_time);
     vec3 to_light = unit_vector(light - tri_hit);
     double diffuse = std::max(dot(to_light, normal), 0.0);
 
-    return diffuse * vec3(1, 1, 1);
+    return diffuse * vec3(0.8, 0.8, 0.8);
   }
 
+  // If hit plane
   if (plane_hit_time > 0) {
+    // Early out
     if (hit != nullptr) {
       *hit = true;
       return {0, 0, 0};
     }
+
+    // Calculate lighting / shadow
     vec3 plane_hit = r.at(plane_hit_time);
     vec3 to_light = unit_vector(light - plane_hit);
     double diffuse = std::max(dot(to_light, normal), 0.0);
@@ -152,44 +196,53 @@ vec3 shoot_ray(const Ray &r, bool *hit=nullptr) {
     if (hit_shadow) {
       return {0, 0, 0};
     }
-    return diffuse * vec3(1, 1, 1);
+    return diffuse * vec3(0.8, 0.1, 0.1);
   }
 
+  // Didn't hit anything
   if (hit != nullptr) {
     *hit = false;
   }
   return {0, 0, 0};
 }
 
+// Generates a random number between [min, max]
 int rand_int(int min, int max) {
   return rand() % (max - min + 1) + min;
 }
 
+// Holds row and column in [0, 1]
 struct Sample {
   double r;
   double c;
 };
 
 int main(int argc, char **argv) {
-  const size_t width = 300;
-  const size_t height = 300;
+  // Output params
+  const size_t width = 500;
+  const size_t height = 500;
   const size_t channels = 3;
   char png[height][width][channels] = {};
 
+  // Switch this if needed
   bool is_ortho = false;
 
   int frame = 0;
+  // Change this to any vectors if needed
   vec3 camera_pos = {2 * std::sin(frame / 20.0), 1, 2 * std::cos(frame / 20.0)};
   vec3 camera_forward = unit_vector(vec3(0, 0.5, -2) - camera_pos);
 
+  // Slightly different viewpoint for the ortho images
   if (is_ortho) {
     camera_pos = {4 * std::sin(0 / 20.0), 2, 4 * std::cos(0 / 20.0)};
     camera_forward = unit_vector(vec3(0, 1, -2) - camera_pos);
   }
 
+  // Calculate camera-local axis
   vec3 camera_right = cross(camera_forward, {0, 1, 0});
   vec3 camera_up = cross(camera_right, camera_forward);
 
+  // Calculate viewport vectors
   double aspect_ratio = static_cast<double>(width) / height;
   double focal = 1.0;
 
@@ -198,22 +251,24 @@ int main(int argc, char **argv) {
     viewport_height *= 3.5;
   }
 
+  // These are used to get world coords of pixels in viewport
   double viewport_width = viewport_height * aspect_ratio;
   vec3 viewport_right = viewport_width * camera_right;
   vec3 viewport_down = -viewport_height * camera_up;
-
   vec3 viewport_top_left = camera_pos - viewport_right / 2 - viewport_down / 2 + focal * camera_forward;
 
-  size_t n = 1;
+  // Number of multi jitter samples = n^2
+  size_t n = 4;
   double n_d = n;
   Sample samples[n][n] = {};
 
   for (size_t r = 0; r < height; ++r) {
     for (size_t c = 0; c < width; ++c) {
-      for (size_t r = 0; r < n; ++r) {
-        for (size_t c = 0; c < n; ++c) {
-          samples[r][c].r = r / n_d + (c % n) / n_d / n_d + 0.5 / n_d / n_d;
-          samples[r][c].c = c / n_d + (r % n) / n_d / n_d + 0.5 / n_d / n_d;
+      // Generate grid of samples diagonally by row
+      for (size_t rr = 0; rr < n; ++rr) {
+        for (size_t cc = 0; cc < n; ++cc) {
+          samples[rr][cc].r = rr / n_d + (cc % n) / n_d / n_d + 0.5 / n_d / n_d;
+          samples[rr][cc].c = cc / n_d + (rr % n) / n_d / n_d + 0.5 / n_d / n_d;
         }
       }
 
@@ -233,24 +288,30 @@ int main(int argc, char **argv) {
         }
       }
 
+      // Sum results of all samples
       vec3 color_sum = {};
 
       for (size_t r_s = 0; r_s < n; ++r_s) {
         for (size_t c_s = 0; c_s < n; ++c_s) {
+          // Position within viewport plus jitter
           double row_ratio = (static_cast<double>(r) + samples[r_s][c_s].r) / height;
           double col_ratio = (static_cast<double>(c) + samples[r_s][c_s].c) / width;
+          // For perspective shoot from camera towards viewport
           Ray ray = {camera_pos, viewport_top_left + viewport_down * row_ratio + viewport_right * col_ratio - camera_pos};
           if (is_ortho) {
+            // For orthographic shoot forwards from viewport
             ray = {viewport_top_left + viewport_down * row_ratio + viewport_right * col_ratio, camera_forward};
           }
           color_sum += shoot_ray(ray);
         }
       }
 
+      // Assign final color
       img_assign(png[r][c], color_sum / (n * n));
     }
   }
   
+  // Write image
   stbi_write_png("out/test.png", width, height, channels, png, width * channels);
   return 0;
 }

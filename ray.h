@@ -2,6 +2,7 @@
 #define RAY_H_
 #include "vec3.h"
 
+// Represents a ray with origin and direction
 struct Ray {
   vec3 origin;
   vec3 direction;
