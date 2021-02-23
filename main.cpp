@@ -59,6 +59,37 @@ double hit_plane(const vec3 &anchor, const vec3 &normal, const Ray &r) {
   return dot(anchor - r.origin, normal) / denominator;
 }
 
+// https://en.wikipedia.org/wiki/M%C3%B6ller%E2%80%93Trumbore_intersection_algorithm
+double hit_triangle(const Ray &r, const vec3 &vertex0, const vec3 &vertex1, const vec3 &vertex2) {
+    const float EPSILON = 0.0000001;
+    vec3 edge1, edge2, h, s, q;
+    float a,f,u,v;
+    edge1 = vertex1 - vertex0;
+    edge2 = vertex2 - vertex0;
+    h = cross(r.direction, edge2);
+    a = dot(edge1, h);
+    if (a > -EPSILON && a < EPSILON)
+        return -1;    // This ray is parallel to this triangle.
+    f = 1.0/a;
+    s = r.origin - vertex0;
+    u = f * dot(s, h);
+    if (u < 0.0 || u > 1.0)
+        return -1;
+    q = cross(s, edge1);
+    v = f * dot(r.direction, q);
+    if (v < 0.0 || u + v > 1.0)
+        return -1;
+    // At this stage we can compute t to find out where the intersection point is on the line.
+    float t = f * dot(edge2, q);
+    if (t > EPSILON) // ray intersection
+    {
+        return t;
+    }
+    else // This means that there is a line intersection but not a ray intersection.
+        return -1;
+}
+
+
 vec3 shoot_ray(const Ray &r, bool *hit=nullptr) {
   vec3 anchor = {0, 0, 0};
   vec3 normal = {0, 1, 0};
@@ -66,31 +97,60 @@ vec3 shoot_ray(const Ray &r, bool *hit=nullptr) {
 
   double plane_hit_time = hit_plane(anchor, normal, r);
 
+  vec3 v0 = {0.5, 0.5, -1};
+  vec3 v1 = {1.5, 0.5, -1};
+  vec3 v2 = {1.5, 1.5, -2};
+
+  double triangle_hit_time = hit_triangle(r, v0, v1, v2);
+
   double t0, t1;
-  if (hit_sphere({0, 0.5, -2}, 0.5, r, &t0, &t1) && (plane_hit_time <= 0 || t0 <= plane_hit_time)) {
+  if (hit_sphere({0, 0.5, -2}, 0.5, r, &t0, &t1) && (plane_hit_time <= 0 || t0 <= plane_hit_time) && (triangle_hit_time <= 0 || t0 <= triangle_hit_time)) {
+    if (hit != nullptr) {
+      *hit = true;
+      return {0, 0, 0};
+    }
     vec3 normal = unit_vector(r.at(t0) - vec3(0,0.5,-2));
     vec3 sphere_hit = r.at(t0);
     vec3 to_light = unit_vector(light - sphere_hit);
     double diffuse = std::max(dot(to_light, normal), 0.0);
-    if (hit != nullptr) {
-      *hit = true;
+    bool hit_shadow;
+    shoot_ray({sphere_hit + normal * 0.001, to_light}, &hit_shadow);
+    if (hit_shadow) {
+      return {0, 0, 0};
     }
     return diffuse * vec3(0, 0.8, 0.8);
   }
 
+  if (triangle_hit_time > 0 && (plane_hit_time <= 0 || triangle_hit_time <= plane_hit_time)) {
+    if (hit != nullptr) {
+      *hit = true;
+      return {0, 0, 0};
+    }
+
+    vec3 e1 = v0 - v1;
+    vec3 e2 = v2 - v1;
+
+    vec3 tri_normal = unit_vector(cross(e2, e1));
+    vec3 tri_hit = r.at(triangle_hit_time);
+    vec3 to_light = unit_vector(light - tri_hit);
+    double diffuse = std::max(dot(to_light, normal), 0.0);
+
+    return diffuse * vec3(1, 1, 1);
+  }
+
   if (plane_hit_time > 0) {
+    if (hit != nullptr) {
+      *hit = true;
+      return {0, 0, 0};
+    }
     vec3 plane_hit = r.at(plane_hit_time);
     vec3 to_light = unit_vector(light - plane_hit);
     double diffuse = std::max(dot(to_light, normal), 0.0);
 
     bool hit_shadow;
-    shoot_ray({plane_hit + to_light * 0.001, to_light}, &hit_shadow);
+    shoot_ray({plane_hit + normal * 0.001, to_light}, &hit_shadow);
     if (hit_shadow) {
       return {0, 0, 0};
-    }
-
-    if (hit != nullptr) {
-      *hit = true;
     }
     return diffuse * vec3(1, 1, 1);
   }
@@ -101,6 +161,102 @@ vec3 shoot_ray(const Ray &r, bool *hit=nullptr) {
   return {0, 0, 0};
 }
 
+int rand_int(int min, int max) {
+  return rand() % (max - min + 1) + min;
+}
+
+struct Sample {
+  double r;
+  double c;
+};
+
+int main(int argc, char **argv) {
+  const size_t width = 300;
+  const size_t height = 300;
+  const size_t channels = 3;
+  char png[height][width][channels] = {};
+
+  bool is_ortho = false;
+
+  int frame = 0;
+  vec3 camera_pos = {2 * std::sin(frame / 20.0), 1, 2 * std::cos(frame / 20.0)};
+  vec3 camera_forward = unit_vector(vec3(0, 0.5, -2) - camera_pos);
+
+  if (is_ortho) {
+    camera_pos = {4 * std::sin(0 / 20.0), 2, 4 * std::cos(0 / 20.0)};
+    camera_forward = unit_vector(vec3(0, 1, -2) - camera_pos);
+  }
+
+  vec3 camera_right = cross(camera_forward, {0, 1, 0});
+  vec3 camera_up = cross(camera_right, camera_forward);
+
+  double aspect_ratio = static_cast<double>(width) / height;
+  double focal = 1.0;
+
+  double viewport_height = 1;
+  if (is_ortho) {
+    viewport_height *= 3.5;
+  }
+
+  double viewport_width = viewport_height * aspect_ratio;
+  vec3 viewport_right = viewport_width * camera_right;
+  vec3 viewport_down = -viewport_height * camera_up;
+
+  vec3 viewport_top_left = camera_pos - viewport_right / 2 - viewport_down / 2 + focal * camera_forward;
+
+  size_t n = 1;
+  double n_d = n;
+  Sample samples[n][n] = {};
+
+  for (size_t r = 0; r < height; ++r) {
+    for (size_t c = 0; c < width; ++c) {
+      for (size_t r = 0; r < n; ++r) {
+        for (size_t c = 0; c < n; ++c) {
+          samples[r][c].r = r / n_d + (c % n) / n_d / n_d + 0.5 / n_d / n_d;
+          samples[r][c].c = c / n_d + (r % n) / n_d / n_d + 0.5 / n_d / n_d;
+        }
+      }
+
+      // Shuffle samples[r][...].r
+      for (size_t r = 0; r < n; ++r) {
+        for (size_t i = n - 1; i >= 1; --i) {
+          int rand = rand_int(0, i);
+          std::swap(samples[r][i].r, samples[r][rand].r);
+        }
+      }
+
+      // Shuffle samples[...][c].c
+      for (size_t c = 0; c < n; ++c) {
+        for (size_t i = n - 1; i >= 1; --i) {
+          int rand = rand_int(0, i);
+          std::swap(samples[i][c].c, samples[rand][c].c);
+        }
+      }
+
+      vec3 color_sum = {};
+
+      for (size_t r_s = 0; r_s < n; ++r_s) {
+        for (size_t c_s = 0; c_s < n; ++c_s) {
+          double row_ratio = (static_cast<double>(r) + samples[r_s][c_s].r) / height;
+          double col_ratio = (static_cast<double>(c) + samples[r_s][c_s].c) / width;
+          Ray ray = {camera_pos, viewport_top_left + viewport_down * row_ratio + viewport_right * col_ratio - camera_pos};
+          if (is_ortho) {
+            ray = {viewport_top_left + viewport_down * row_ratio + viewport_right * col_ratio, camera_forward};
+          }
+          color_sum += shoot_ray(ray);
+        }
+      }
+
+      img_assign(png[r][c], color_sum / (n * n));
+    }
+  }
+  
+  stbi_write_png("out/test.png", width, height, channels, png, width * channels);
+  return 0;
+}
+
+// Uncomment and rename other main() to main2 to run with SDL
+/*
 // https://gist.github.com/CoryBloyd/6725bb78323bb1157ff8d4175d42d789
 #include <stdio.h>
 #include <SDL2/SDL.h>
@@ -128,18 +284,30 @@ int main(int argc, char *argv[]) {
         const size_t height = 500;
         const size_t channels = 3;
 
+        bool is_ortho = false;
+
         vec3 camera_pos = {4 * std::sin(frame / 20.0), 1, 4 * std::cos(frame / 20.0)};
         vec3 camera_forward = unit_vector(vec3(0, 0.5, -2) - camera_pos);
+
+        if (is_ortho) {
+          camera_pos = {4 * std::sin(frame / 20.0), 2, 4 * std::cos(frame / 20.0)};
+          camera_forward = unit_vector(vec3(0, 1, -2) - camera_pos);
+        }
+
         vec3 camera_right = cross(camera_forward, {0, 1, 0});
+        vec3 camera_up = cross(camera_right, camera_forward);
 
         double aspect_ratio = static_cast<double>(width) / height;
         double focal = 1.0;
 
         double viewport_height = 1;
+        if (is_ortho) {
+          viewport_height *= 3;
+        }
         double viewport_width = viewport_height * aspect_ratio;
         vec3 viewport_right = viewport_width * camera_right;
-        vec3 viewport_down = {0, -viewport_height, 0};
-
+        vec3 viewport_down = -viewport_height * camera_up;
+        
         vec3 viewport_top_left = camera_pos - viewport_right / 2 - viewport_down / 2 + focal * camera_forward;
 
         for (size_t r = 0; r < height; ++r) {
@@ -147,6 +315,9 @@ int main(int argc, char *argv[]) {
             double row_ratio = (static_cast<double>(r) + 0.5) / height;
             double col_ratio = (static_cast<double>(c) + 0.5) / width;
             Ray ray = {camera_pos, viewport_top_left + viewport_down * row_ratio + viewport_right * col_ratio - camera_pos};
+            if (is_ortho) {
+              ray = {viewport_top_left + viewport_down * row_ratio + viewport_right * col_ratio, camera_forward};
+            }
             char p[4];
             img_assign(p, shoot_ray(ray));
             p[3] = 255;
@@ -165,34 +336,4 @@ int main(int argc, char *argv[]) {
         SDL_SetWindowTitle(window, SDL_itoa(endTicks - startTicks, title, 10));
     }
 }
-
-int main2(int argc, char **argv) {
-  const size_t width = 800;
-  const size_t height = 800;
-  const size_t channels = 3;
-  char png[height][width][channels] = {};
-
-  double aspect_ratio = static_cast<double>(width) / height;
-  double focal = 1.0;
-
-  double viewport_height = 1;
-  double viewport_width = viewport_height * aspect_ratio;
-  vec3 viewport_right = {viewport_width, 0, 0};
-  vec3 viewport_down = {0, -viewport_height, 0};
-
-  vec3 origin = {};
-  vec3 viewport_top_left = origin - viewport_right / 2 - viewport_down / 2 - vec3(0, 0, focal);
-
-  for (size_t r = 0; r < height; ++r) {
-    for (size_t c = 0; c < width; ++c) {
-      double row_ratio = (static_cast<double>(r) + 0.5) / height;
-      double col_ratio = (static_cast<double>(c) + 0.5) / width;
-      Ray ray = {origin, viewport_top_left + viewport_down * row_ratio + viewport_right * col_ratio};
-      img_assign(png[r][c], shoot_ray(ray));
-      //png[r][c][0] = (char)(255*(ray.direction.e[1] + viewport_height / 2) / viewport_height);
-    }
-  }
-  
-  stbi_write_png("out/test.png", width, height, channels, png, width * channels);
-  return 0;
-}
+*/
