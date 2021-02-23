@@ -13,6 +13,7 @@ To change camera viewpoint / orthographic, change the following in main.cpp:
   vec3 camera_forward = unit_vector(vec3(0, 0.5, -2) - camera_pos);
 
 Can run in SDL2 to see realtime orbit (see commented code at bottom of main.cpp)
+Can see this in out/sdl2.mp4
 
 Used https://github.com/nothings/stb/blob/master/stb_image_write.h for png
 Used https://raytracing.github.io/books/RayTracingInOneWeekend.html for vec3
