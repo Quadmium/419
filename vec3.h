@@ -37,6 +37,10 @@ class vec3 {
             return *this *= 1/t;
         }
 
+        bool operator==(const vec3 &other) {
+            return e[0] == other.e[0] && e[1] == other.e[1] && e[2] == other.e[2];
+        }
+
         double length() const {
             return sqrt(length_squared());
         }
@@ -93,6 +97,28 @@ inline vec3 cross(const vec3 &u, const vec3 &v) {
 
 inline vec3 unit_vector(vec3 v) {
     return v / v.length();
+}
+
+// element-wise minimum
+inline vec3 min_e(const vec3 &a, const vec3 &b) {
+    return {
+        std::min(a.x(), b.x()),
+        std::min(a.y(), b.y()),
+        std::min(a.z(), b.z())
+    };
+}
+
+// element-wise maximum
+inline vec3 max_e(const vec3 &a, const vec3 &b) {
+    return {
+        std::max(a.x(), b.x()),
+        std::max(a.y(), b.y()),
+        std::max(a.z(), b.z())
+    };
+}
+
+inline vec3 lerp(const vec3 &a, const vec3 &b, double t) {
+    return t * b + (1-t) * a;
 }
 
 // Type aliases for vec3

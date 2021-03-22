@@ -1,10 +1,20 @@
 #include <iostream>
 #include <cmath>
+#include <vector>
+#include <memory>
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
 
+#define TINYOBJLOADER_IMPLEMENTATION
+#include "tiny_obj_loader.h"
+
+#include <unordered_map>
+
 #include "vec3.h"
 #include "ray.h"
+#include "sphere.h"
+#include "triangle.h"
+#include "bvh.h"
 
 // Assigns a vec3 to char*, used for assigning float pixels to discrete images
 // img - target array
@@ -15,55 +25,6 @@ void img_assign(char *img, const vec3 &color) {
   img[2] = 255.999 * color.e[2];
 }
 
-// Checks if a ray hits a sphere
-// center - the sphere center
-// radius - the sphere radius
-// r - ray to test
-// t0 - output for first hit
-// t1 - output for second hit
-// returns true if any hit found. Sets t0 to smaller t of hits, t1 to second t if found.
-bool hit_sphere(const point3& center, double radius, const Ray& r, double *t0, double *t1) {
-  // Adapted from lecture
-  vec3 d = r.direction;
-  vec3 d_unit = unit_vector(d);
-  vec3 f = r.origin - center;
-  double a = d.length_squared();
-  double b = 2 * dot(f, d);
-  double c = f.length_squared() - radius * radius;
-
-  double b2_minus_4ac = 4 * a * (radius * radius - (f - dot(f, d_unit) * d_unit).length_squared());
-
-  // Return early for invaid determinant
-  if (b2_minus_4ac < 0) {
-    return false;
-  }
-
-  double q = -0.5 * (b + (b >= 0 ? 1 : -1) * std::sqrt(b2_minus_4ac));
-
-  // Calculate two solutions
-  *t0 = c / q;
-  *t1 = q / a;
-
-  // Order them
-  if (*t1 < *t0) {
-    std::swap(*t0, *t1);
-  }
-
-  // Try putting t1 first if t0 is negative
-  if (*t0 < 0) {
-    std::swap(*t0, *t1);
-  }
-
-  // If still negative, both are negative, put it back and return
-  if (*t0 < 0) {
-    std::swap(*t0, *t1);
-    return false;
-  }
-
-  // Otherwise, t0 is positive
-  return true;
-}
-
 // Checks if a ray hits a plane
 // anchor - anchor of plane
 // normal - normal of plane
@@ -71,139 +32,82 @@ bool hit_sphere(const point3& center, double radius, const Ray& r, double *t0, d
 // returns t of hit
 double hit_plane(const vec3 &anchor, const vec3 &normal, const Ray &r) {
   double denominator = dot(r.direction, normal);
-  if (denominator == 0.0) {
-    denominator = 0.0000001;
+  if (abs(denominator) < 0.00001) {
+    return -1;
   }
-  return dot(anchor - r.origin, normal) / denominator;
+  double t = dot(anchor - r.origin, normal) / denominator;
+  return t;
 }
 
-// https://en.wikipedia.org/wiki/M%C3%B6ller%E2%80%93Trumbore_intersection_algorithm
-// Check if a ray hits a triangle
-// r - ray to test
-// vertex0/1/2 - three vertices of triangle
-// returns t of hit, else -1
-double hit_triangle(const Ray &r, const vec3 &vertex0, const vec3 &vertex1, const vec3 &vertex2) {
-    const float EPSILON = 0.0000001;
-    vec3 edge1, edge2, h, s, q;
-    float a,f,u,v;
-    edge1 = vertex1 - vertex0;
-    edge2 = vertex2 - vertex0;
-    h = cross(r.direction, edge2);
-    a = dot(edge1, h);
-    if (a > -EPSILON && a < EPSILON)
-        return -1;    // This ray is parallel to this triangle.
-    f = 1.0/a;
-    s = r.origin - vertex0;
-    u = f * dot(s, h);
-    if (u < 0.0 || u > 1.0)
-        return -1;
-    q = cross(s, edge1);
-    v = f * dot(r.direction, q);
-    if (v < 0.0 || u + v > 1.0)
-        return -1;
-    // At this stage we can compute t to find out where the intersection point is on the line.
-    float t = f * dot(edge2, q);
-    if (t > EPSILON) // ray intersection
-    {
-        return t;
+// Uses traditional check every hittable approach
+// r - ray to shoot
+// world - list of all hittable objects
+vec3 shoot_ray_slow(const Ray &r, std::vector<std::unique_ptr<Hittable>> &world) {
+  HitResult final;
+  final.t = 10000;
+  for (std::unique_ptr<Hittable> &h : world) {
+    HitResult res = h->hit(r, 0, 1000);
+    if (res.hit && res.t < final.t) {
+      final = res;
     }
-    else // This means that there is a line intersection but not a ray intersection.
-        return -1;
-}
+  }
 
-// Shoots a ray and either calculates color or if it hit an object
-// r - ray to test
-// hit - a pointer to write if a hit occured, if so doesn't try to calculate color
-// returns vec3 of color only if hit == nullptr
-vec3 shoot_ray(const Ray &r, bool *hit=nullptr) {
-  // Plane and light details
-  vec3 anchor = {0, 0, 0};
-  vec3 normal = {0, 1, 0};
+  if (!final.hit) {
+    return {0, 0, 0};
+  }
+
   vec3 light = {10, 10, 10};
+  vec3 to_light = unit_vector(light - final.point);
+  double diffuse = std::max(dot(to_light, final.normal), 0.0);
 
-  // Plane hit or not
-  double plane_hit_time = hit_plane(anchor, normal, r);
+  return diffuse * final.albedo;
+}
 
-  // Triangle details
-  vec3 v0 = {0.2, 0, -1};
-  vec3 v1 = {1.5, 0, -1};
-  vec3 v2 = {1, 1.5, -2};
+// Uses a BVH, returns color
+// r - ray to shoot
+// bvh_root - bvh root node
+vec3 shoot_ray(const Ray &r, BVHNode &bvh_root) {
+  HitResult final = bvh_root.hit(r, 0, 1000);
 
-  // Triangle hit or not
-  double triangle_hit_time = hit_triangle(r, v0, v1, v2);
+  // Additional logic to make plane
+  double plane_time = hit_plane({0, -0.57, 0}, {0, 1, 0}, r);
 
-  double t0, t1;
-  // If hit sphere and t is smallest compared to the other two
-  if (hit_sphere({0, 0.5, -2}, 0.5, r, &t0, &t1) && (plane_hit_time <= 0 || t0 <= plane_hit_time) && (triangle_hit_time <= 0 || t0 <= triangle_hit_time)) {
-    // Early out if only looking for collision
-    if (hit != nullptr) {
-      *hit = true;
-      return {0, 0, 0};
-    }
+  vec3 bg_color = vec3{135, 206, 235} / 255.0;
+  vec3 plane_color = vec3{155, 118, 83} / 255.0;
 
-    // Calculate diffuse lighting
-    vec3 normal = unit_vector(r.at(t0) - vec3(0,0.5,-2));
-    vec3 sphere_hit = r.at(t0);
-    vec3 to_light = unit_vector(light - sphere_hit);
-    double diffuse = std::max(dot(to_light, normal), 0.0);
-
-    // Check if hit anything to cast shadow
-    bool hit_shadow;
-    shoot_ray({sphere_hit + normal * 0.001, to_light}, &hit_shadow);
-    if (hit_shadow) {
-      return {0, 0, 0};
-    }
-
-    return diffuse * vec3(0, 0.8, 0.8);
+  plane_color = lerp(plane_color, bg_color, r.at(plane_time).length() / 100.0);
+  if (plane_time > 100) {
+    plane_color = bg_color;
   }
 
-  // If hit triangle and t is smallest compared to rest
-  if (triangle_hit_time > 0 && (plane_hit_time <= 0 || triangle_hit_time <= plane_hit_time)) {
-    // Early out
-    if (hit != nullptr) {
-      *hit = true;
-      return {0, 0, 0};
-    }
-
-    // Calculate triangle normal
-    vec3 e1 = v0 - v1;
-    vec3 e2 = v2 - v1;
-    vec3 tri_normal = unit_vector(cross(e2, e1));
-
-    // Calculate lighting
-    vec3 tri_hit = r.at(triangle_hit_time);
-    vec3 to_light = unit_vector(light - tri_hit);
-    double diffuse = std::max(dot(to_light, normal), 0.0);
-
-    return diffuse * vec3(0.8, 0.8, 0.8);
+  if (!final.hit && plane_time <= 0) {
+    return bg_color;
   }
 
-  // If hit plane
-  if (plane_hit_time > 0) {
-    // Early out
-    if (hit != nullptr) {
-      *hit = true;
-      return {0, 0, 0};
+  if (!final.hit || plane_time > 0 && plane_time < final.t) {
+    vec3 p = r.at(plane_time);
+    vec3 reflect = r.direction - 2 * dot(r.direction, {0, 1, 0}) * vec3({0, 1, 0});
+    // Reflect ray up if hits plane
+    vec3 res = shoot_ray(Ray{p + 0.001 * vec3{0, 1, 0}, reflect}, bvh_root);
+    if (res == bg_color) {
+      return plane_color;
     }
-
-    // Calculate lighting / shadow
-    vec3 plane_hit = r.at(plane_hit_time);
-    vec3 to_light = unit_vector(light - plane_hit);
-    double diffuse = std::max(dot(to_light, normal), 0.0);
-
-    bool hit_shadow;
-    shoot_ray({plane_hit + normal * 0.001, to_light}, &hit_shadow);
-    if (hit_shadow) {
-      return {0, 0, 0};
-    }
-    return diffuse * vec3(0.8, 0.1, 0.1);
+    // Make reflection dimmer
+    return lerp(res, plane_color, 0.7);
   }
 
-  // Didn't hit anything
-  if (hit != nullptr) {
-    *hit = false;
+  if (!final.hit) {
+    return {0, 0, 0};
   }
-  return {0, 0, 0};
+
+  // Diffuse and specular
+  vec3 light = {10, 10, 10};
+  vec3 to_light = unit_vector(light - final.point);
+  double diffuse = std::max(dot(to_light, final.normal), 0.0);
+  vec3 reflect = unit_vector(r.direction - 2 * dot(r.direction, final.normal) * final.normal);
+
+  // Cap out colors at [0, 1] so doesnt go out of bounds
+  return min_e(vec3{1, 1, 1}, max_e(vec3{}, diffuse * final.albedo + vec3{1, 1, 1} * std::pow(std::max(dot(reflect, to_light), 0.0), 8)));
 }
 
 // Generates a random number between [min, max]
@@ -219,18 +123,21 @@ struct Sample {
 
 int main(int argc, char **argv) {
   // Output params
-  const size_t width = 500;
-  const size_t height = 500;
+  const size_t width = 1200;
+  const size_t height = 1200;
   const size_t channels = 3;
   char png[height][width][channels] = {};
 
   // Switch this if needed
   bool is_ortho = false;
 
-  int frame = 0;
-  // Change this to any vectors if needed
-  vec3 camera_pos = {2 * std::sin(frame / 20.0), 1, 2 * std::cos(frame / 20.0)};
-  vec3 camera_forward = unit_vector(vec3(0, 0.5, -2) - camera_pos);
+  // For spheres
+  //vec3 camera_pos = {0, 0, 2};
+  //vec3 camera_forward = unit_vector(vec3(0, 0, -100) - camera_pos);
+
+  // For mesh
+  vec3 camera_pos = {0.4, 0.3, 2.5};
+  vec3 camera_forward = unit_vector(vec3(0.4, 0, 0) - camera_pos);
 
   // Slightly different viewpoint for the ortho images
   if (is_ortho) {
@@ -258,9 +165,130 @@ int main(int argc, char **argv) {
   vec3 viewport_top_left = camera_pos - viewport_right / 2 - viewport_down / 2 + focal * camera_forward;
 
   // Number of multi jitter samples = n^2
-  size_t n = 4;
+  size_t n = 1;
   double n_d = n;
   Sample samples[n][n] = {};
+
+  std::vector<std::unique_ptr<Hittable>> world;
+
+  // Uncomment to generate sphere scene, and dont forget to change camera coordinates to see it
+  /*
+  for (size_t i = 0; i < 10000; ++i) {
+    world.push_back(std::make_unique<Sphere>(
+      vec3{(
+        rand_int(0, 1000) / 1000.0 - 0.5) * 6, // x
+        (rand_int(0, 1000) / 1000.0 - 0.5) * 6, // y
+        -5 - 1 * rand_int(0, 1000) / 1000.0}, // z
+      0.015, // radius
+      vec3(rand_int(0, 1000) / 1000.0, rand_int(0, 1000) / 1000.0, rand_int(0, 1000) / 1000.0) // color
+    ));
+  }*/
+
+  // Tiny obj loader reference code
+  std::string inputfile = "cow.obj";
+  tinyobj::attrib_t attrib;
+  std::vector<tinyobj::shape_t> shapes;
+  std::vector<tinyobj::material_t> materials;
+
+  std::string err;
+
+  bool ret = tinyobj::LoadObj(&attrib, &shapes, &materials, &err, inputfile.c_str(), "./", false);
+
+  if (!err.empty()) {
+    std::cerr << err << std::endl;
+  }
+
+  if (!ret) {
+    exit(1);
+  }
+
+  for (size_t s = 0; s < shapes.size(); s++) {
+    // First loop through - generate normals
+    std::unordered_map<int, vec3> normals;
+
+    size_t index_offset = 0;
+    for (size_t f = 0; f < shapes[s].mesh.num_face_vertices.size(); f++) {
+      size_t fv = size_t(shapes[s].mesh.num_face_vertices[f]);
+
+      // Convert vertices to vec3
+      vec3 vertices[3];
+
+      for (size_t v = 0; v < fv; v++) {
+        tinyobj::index_t idx = shapes[s].mesh.indices[index_offset + v];
+
+        tinyobj::real_t vx = attrib.vertices[3*size_t(idx.vertex_index)+0];
+        tinyobj::real_t vy = attrib.vertices[3*size_t(idx.vertex_index)+1];
+        tinyobj::real_t vz = attrib.vertices[3*size_t(idx.vertex_index)+2];
+
+        vertices[v] = vec3(vx, vy, vz);
+      }
+
+      // Compute normal
+      vec3 e1 = vertices[0] - vertices[1];
+      vec3 e2 = vertices[2] - vertices[1];
+      vec3 normal = cross(e2, e1);
+
+      // Add normal to all vertices touching
+      for (size_t v = 0; v < fv; v++) {
+        int idx = shapes[s].mesh.indices[index_offset + v].vertex_index;
+        if (normals.find(idx) == normals.end()) {
+          normals[idx] = {};
+        }
+
+        normals[idx] += normal;
+      }
+
+      index_offset += fv;
+
+      // per-face material
+      shapes[s].mesh.material_ids[f];
+    }
+
+    // Second loop create triangles
+    index_offset = 0;
+    for (size_t f = 0; f < shapes[s].mesh.num_face_vertices.size(); f++) {
+      size_t fv = size_t(shapes[s].mesh.num_face_vertices[f]);
+
+      vec3 vertices[3];
+      vec3 cur_normals[3];
+      
+      for (size_t v = 0; v < fv; v++) {
+        tinyobj::index_t idx = shapes[s].mesh.indices[index_offset + v];
+
+        tinyobj::real_t vx = attrib.vertices[3*size_t(idx.vertex_index)+0];
+        tinyobj::real_t vy = attrib.vertices[3*size_t(idx.vertex_index)+1];
+        tinyobj::real_t vz = attrib.vertices[3*size_t(idx.vertex_index)+2];
+
+        vertices[v] = vec3(vx, vy, vz);
+        cur_normals[v] = unit_vector(normals[idx.vertex_index]);
+      }
+
+      // Create triangle here
+      world.push_back(std::make_unique<Triangle>(vertices[0], vertices[1], vertices[2], cur_normals[0], cur_normals[1], cur_normals[2]));
+
+      index_offset += fv;
+
+      // per-face material
+      shapes[s].mesh.material_ids[f];
+    }
+  }
+
+  // Creates grass
+  for (size_t i = 0; i < 7; ++i)
+  for (size_t j = 0; j < 5; ++j)
+  world.push_back(std::make_unique<Sphere>(
+    vec3{0.9, -0.8, -0.4} + vec3{1, 0, 0} * i * 0.15 + vec3{0, 0, 1} * j * 0.15,
+    0.3, // radius
+    vec3{126, 200, 80} / 255.0 // color
+  ));
+
+  // Convert to list of pointers for bvh
+  std::vector<Hittable*> world_ptrs;
+  for (size_t i = 0; i < world.size(); ++i) {
+    world_ptrs.push_back(world[i].get());
+  }
+  
+  BVHNode bvh_root(world_ptrs);
 
   for (size_t r = 0; r < height; ++r) {
     for (size_t c = 0; c < width; ++c) {
@@ -302,7 +330,9 @@ int main(int argc, char **argv) {
             // For orthographic shoot forwards from viewport
             ray = {viewport_top_left + viewport_down * row_ratio + viewport_right * col_ratio, camera_forward};
           }
-          color_sum += shoot_ray(ray);
+          // Change to use slower approach
+          //color_sum += shoot_ray_slow(ray, world);
+          color_sum += shoot_ray(ray, bvh_root);
         }
       }
 
@@ -323,7 +353,7 @@ int main(int argc, char **argv) {
 #include <SDL2/SDL.h>
 inline uint32_t argb(uint8_t a, uint8_t r, uint8_t g, uint8_t b) { return (a<<24) | (r << 16) | (g << 8) | (b << 0); }
 
-int main(int argc, char *argv[]) {
+int main2(int argc, char *argv[]) {
     SDL_Init(SDL_INIT_VIDEO);
 
     SDL_Rect    screenRect = { 0,0,500, 500 };
@@ -396,5 +426,4 @@ int main(int argc, char *argv[]) {
         char title[32];
         SDL_SetWindowTitle(window, SDL_itoa(endTicks - startTicks, title, 10));
     }
-}
-*/
+}*/

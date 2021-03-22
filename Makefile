@@ -4,7 +4,7 @@
 # Variables to control Makefile operation
  
 CC = g++
-CFLAGS = -std=c++11 -Wall -g
+CFLAGS = -std=c++14 -Wall -g
  
 # ****************************************************
 # Targets needed to bring the executable up to date
@@ -14,7 +14,7 @@ main: main.o
  
 # The main.o target can be written more simply
  
-main.o: main.cpp
+main.o: main.cpp vec3.h ray.h hittable.h triangle.h sphere.h aabb.h bvh.h
 	$(CC) $(CFLAGS) -c main.cpp
 
 clean:
