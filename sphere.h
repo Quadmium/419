@@ -4,8 +4,8 @@
 
 class Sphere : public Hittable {
   public:
-    // center of sphere, radius of sphere, color of sphere
-    Sphere(vec3 center, double radius, vec3 color) : center(center), radius(radius), color(color) {}
+    // center of sphere, radius of sphere, material of sphere
+    Sphere(vec3 center, double radius, std::shared_ptr<Material> material) : center(center), radius(radius), material(material) {}
 
     // Ray r hits sphere between t_min and t_max
     HitResult hit(const Ray& r, double t_min, double t_max) {
@@ -47,9 +47,9 @@ class Sphere : public Hittable {
 
       res.hit = true;
       res.point = r.at(res.t);
-      res.normal = unit_vector(res.point - center);
-      res.albedo = color;
-      
+      res.set_normal(r, unit_vector(res.point - center));
+      res.material = material;
+
       return res;
     }
 
@@ -63,7 +63,7 @@ class Sphere : public Hittable {
   
     vec3 center;
     double radius;
-    vec3 color;
+    std::shared_ptr<Material> material;
 };
 
 #endif

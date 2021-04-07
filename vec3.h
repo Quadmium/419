@@ -6,6 +6,17 @@
 
 using std::sqrt;
 
+
+inline double random_double() {
+    // Returns a random real in [0,1).
+    return rand() / (RAND_MAX + 1.0);
+}
+
+inline double random_double(double min, double max) {
+    // Returns a random real in [min,max).
+    return min + (max-min)*random_double();
+}
+
 class vec3 {
     public:
         vec3() : e{0,0,0} {}
@@ -49,6 +60,19 @@ class vec3 {
             return e[0]*e[0] + e[1]*e[1] + e[2]*e[2];
         }
 
+        inline static vec3 random() {
+            return vec3(random_double(), random_double(), random_double());
+        }
+
+        inline static vec3 random(double min, double max) {
+            return vec3(random_double(min,max), random_double(min,max), random_double(min,max));
+        }
+
+        bool near_zero() const {
+            // Return true if the vector is close to zero in all dimensions.
+            const auto s = 1e-8;
+            return (fabs(e[0]) < s) && (fabs(e[1]) < s) && (fabs(e[2]) < s);
+        }
     public:
         double e[3];
 };
@@ -119,6 +143,18 @@ inline vec3 max_e(const vec3 &a, const vec3 &b) {
 
 inline vec3 lerp(const vec3 &a, const vec3 &b, double t) {
     return t * b + (1-t) * a;
+}
+
+vec3 random_in_unit_sphere() {
+    while (true) {
+        auto p = vec3::random(-1,1);
+        if (p.length_squared() >= 1) continue;
+        return p;
+    }
+}
+
+vec3 random_unit_vector() {
+    return unit_vector(random_in_unit_sphere());
 }
 
 // Type aliases for vec3

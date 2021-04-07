@@ -14,7 +14,7 @@ main: main.o
  
 # The main.o target can be written more simply
  
-main.o: main.cpp vec3.h ray.h hittable.h triangle.h sphere.h aabb.h bvh.h
+main.o: main.cpp vec3.h ray.h hittable.h triangle.h sphere.h aabb.h bvh.h material.h
 	$(CC) $(CFLAGS) -c main.cpp
 
 clean:

@@ -48,7 +48,7 @@ class Triangle : public Hittable {
       res.hit = true;
       res.point = r.at(res.t);
       res.normal = (1 - u - v) * normal0 + u * normal1 + v * normal2;
-      res.albedo = vec3(1, 215/255.0, 0);
+      res.set_normal(r, unit_vector((1 - u - v) * normal0 + u * normal1 + v * normal2));
 
       return res;
     }
