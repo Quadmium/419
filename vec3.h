@@ -123,6 +123,10 @@ inline vec3 unit_vector(vec3 v) {
     return v / v.length();
 }
 
+vec3 reflect(const vec3& v, const vec3& n) {
+    return v - 2*dot(v,n)*n;
+}
+
 // element-wise minimum
 inline vec3 min_e(const vec3 &a, const vec3 &b) {
     return {

@@ -79,8 +79,8 @@ struct Sample {
 
 int main(int argc, char **argv) {
   // Output params
-  const size_t width = 500;
-  const size_t height = 500;
+  const size_t width = 600;
+  const size_t height = 600;
   const size_t channels = 3;
   char png[height][width][channels] = {};
 
@@ -88,8 +88,8 @@ int main(int argc, char **argv) {
   bool is_ortho = false;
   
   // For mesh
-  vec3 camera_pos = {0, 0, -3};
-  vec3 camera_forward = unit_vector(vec3(0, 0, -1) - camera_pos);
+  vec3 camera_pos = {0, 0, 2};
+  vec3 camera_forward = unit_vector(vec3(0, 0, 0) - camera_pos);
 
   // Slightly different viewpoint for the ortho images
   if (is_ortho) {
@@ -123,10 +123,15 @@ int main(int argc, char **argv) {
 
   std::vector<std::unique_ptr<Hittable>> world;
 
-  auto mat1 = std::make_shared<Lambertian>(vec3{0.5, 0.5, 0.5});
+  auto material_ground = std::make_shared<Lambertian>(color(0.8, 0.8, 0.0));
+  auto material_center = std::make_shared<Lambertian>(color(0.7, 0.3, 0.3));
+  auto material_left   = std::make_shared<Metal>(color(0.8, 0.8, 0.8));
+  auto material_right  = std::make_shared<Metal>(color(0.8, 0.6, 0.2));
 
-  world.push_back(std::make_unique<Sphere>(point3(0,0,-1), 0.5, mat1));
-  world.push_back(std::make_unique<Sphere>(point3(0,-100.5,-1), 100, mat1));
+  world.push_back(std::make_unique<Sphere>(point3( 0.0, -100.5, -1.0), 100.0, material_ground));
+  world.push_back(std::make_unique<Sphere>(point3( 0.0,    0.0, -1.0),   0.5, material_center));
+  world.push_back(std::make_unique<Sphere>(point3(-1.0,    0.0, -1.0),   0.5, material_left));
+  world.push_back(std::make_unique<Sphere>(point3( 1.0,    0.0, -1.0),   0.5, material_right));
 
   // Convert to list of pointers for bvh
   std::vector<Hittable*> world_ptrs;
