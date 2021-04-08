@@ -4,7 +4,7 @@
 # Variables to control Makefile operation
  
 CC = g++
-CFLAGS = -std=c++14 -Wall -g
+CFLAGS = -std=c++14 -Wall -O3 -ffast-math -march=native -fwhole-program
  
 # ****************************************************
 # Targets needed to bring the executable up to date

@@ -124,7 +124,7 @@ int main(int argc, char **argv) {
 
   std::vector<std::unique_ptr<Hittable>> world;
 
-  auto material_ground = std::make_shared<Checkers>(color(1, 1, 1), color(0, 0, 1), 3);
+  auto material_ground = std::make_shared<Checkers>(color(1, 0, 0), color(1, 1, 0));
   auto material_light = std::make_shared<Light>(vec3(1, 1, 1));
   auto material_glass   = std::make_shared<Dielectric>(1.5);
   auto material_metal  = std::make_shared<Metal>(color(0.5, 0.5, 0.5));
@@ -132,12 +132,10 @@ int main(int argc, char **argv) {
   auto material_green = std::make_shared<Lambertian>(color(0, 1, 0));
   auto material_blue = std::make_shared<Lambertian>(color(0, 0, 1));
 
-  world.push_back(std::make_unique<Sphere>(point3( 0.0, -100.5, -1.0), 100.0, material_metal));
-  world.push_back(std::make_unique<Sphere>(point3( 0.5,    -0.3, -3),   0.2, material_glass));
-  world.push_back(std::make_unique<Sphere>(point3( 0,    -0.3, -3),   0.2, material_glass));
-  world.push_back(std::make_unique<Sphere>(point3( -0.5,    -0.3, -3),   0.2, material_glass));
-  world.push_back(std::make_unique<Sphere>(point3( 0,    -0.22, -6),   0.4, material_glass));
-  world.push_back(std::make_unique<Sphere>(point3( 1,    0, -3.5),   0.5, material_ground));
+  world.push_back(std::make_unique<Sphere>(point3( 0.0, -100.5, -1.0), 100.0, material_ground));
+  world.push_back(std::make_unique<Sphere>(point3( 0,    0.5, -2.5),   0.5, material_glass));
+  world.push_back(std::make_unique<Sphere>(point3( 0,    0.5, -2.5),   -0.45, material_glass));
+  world.push_back(std::make_unique<Sphere>(point3( 1,    0, -3.5),   0.5, material_metal));
   world.push_back(std::make_unique<Sphere>(point3( -1,    0, -3.5),   0.5, material_blue));
 
   // Convert to list of pointers for bvh
@@ -200,6 +198,6 @@ int main(int argc, char **argv) {
   }
   
   // Write image
-  stbi_write_png("out/mirror.png", width, height, channels, png, width * channels);
+  stbi_write_png("out/transparent.png", width, height, channels, png, width * channels);
   return 0;
 }

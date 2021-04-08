@@ -3,7 +3,7 @@
 #include "hittable.h"
 
 struct ScatterResult {
-  bool did;
+  bool did = false;
   vec3 attenuation;
   Ray scattered;
 };
@@ -11,6 +11,24 @@ struct ScatterResult {
 class Material {
   public:
     virtual ScatterResult scatter(const Ray &ray, const HitResult &hit) const = 0;
+    virtual vec3 emitted(const vec3& point) const {
+      return {0, 0, 0};
+    }
+};
+
+class Light : public Material {
+  public:
+    Light(const vec3 &albedo) : albedo(albedo) {}
+
+    virtual ScatterResult scatter(const Ray &ray, const HitResult &hit) const override {
+      return {};
+    }
+
+    virtual vec3 emitted(const vec3 &point) const {
+      return albedo;
+    }
+
+    vec3 albedo;
 };
 
 class Lambertian : public Material {
@@ -24,7 +42,7 @@ class Lambertian : public Material {
         scatter_dir = hit.normal;
       }
 
-      return {true, albedo, Ray(hit.point, scatter_dir)};
+      return {true, albedo, Ray(hit.point, unit_vector(scatter_dir))};
     }
 
     vec3 albedo;
@@ -74,5 +92,35 @@ class Dielectric : public Material {
         r0 = r0 * r0;
         return r0 + (1 - r0) * pow((1 - c), 5);
       }
+};
+
+class Checkers : public Material {
+  public:
+    Checkers(const vec3 &albedo1, const vec3 &albedo2, double scale=2.0) : albedo1(albedo1), albedo2(albedo2), scale(scale) {}
+
+    virtual ScatterResult scatter(const Ray &ray, const HitResult &hit) const override {
+      vec3 scatter_dir = hit.normal + random_unit_vector();
+
+      if (scatter_dir.near_zero()) {
+        scatter_dir = hit.normal;
+      }
+
+      // Shift to avoid double lines at origin
+      // Scale to increase pattern frequency
+      int x = 10000 + hit.point.x() * scale;
+      int z = 10000 + hit.point.z() * scale;
+
+      vec3 final_albedo = albedo1;
+
+      if (x % 2 == z % 2) {
+        final_albedo = albedo2;
+      }
+
+      return {true, final_albedo, Ray(hit.point, scatter_dir)};
+    }
+
+    vec3 albedo1;
+    vec3 albedo2;
+    double scale;
 };
 #endif
