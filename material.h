@@ -42,4 +42,37 @@ class Metal : public Material {
     
     vec3 albedo;
 };
+
+class Dielectric : public Material {
+  public:
+    Dielectric(double ir) : ir(ir) {}
+
+    virtual ScatterResult scatter(const Ray &ray, const HitResult &hit) const override {
+      double refract_ratio = hit.front ? (1.0 / ir) : ir;
+
+      vec3 unit_dir = unit_vector(ray.direction);
+      double c = fmin(dot(-unit_dir, hit.normal), 1.0);
+      double s = sqrt(1.0 - c * c);
+
+      bool no_refract = refract_ratio * s > 1.0;
+      vec3 dir;
+
+      if (no_refract || reflectance(c, refract_ratio) > random_double()) {
+        dir = reflect(unit_dir, hit.normal);
+      } else {
+        dir = refract(unit_dir, hit.normal, refract_ratio);
+      }
+
+      return {true, {1.0, 1.0, 1.0}, Ray(hit.point, dir)};
+    }
+
+    double ir;
+
+    private:
+      static double reflectance(double c, double refract_ratio) {
+        double r0 = (1 - refract_ratio) / (1 + refract_ratio);
+        r0 = r0 * r0;
+        return r0 + (1 - r0) * pow((1 - c), 5);
+      }
+};
 #endif

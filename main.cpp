@@ -79,8 +79,8 @@ struct Sample {
 
 int main(int argc, char **argv) {
   // Output params
-  const size_t width = 600;
-  const size_t height = 600;
+  const size_t width = 500;
+  const size_t height = 300;
   const size_t channels = 3;
   char png[height][width][channels] = {};
 
@@ -88,8 +88,13 @@ int main(int argc, char **argv) {
   bool is_ortho = false;
   
   // For mesh
-  vec3 camera_pos = {0, 0, 2};
-  vec3 camera_forward = unit_vector(vec3(0, 0, 0) - camera_pos);
+  vec3 camera_pos = {-2, 2, 1};
+  vec3 camera_forward = unit_vector(vec3(0, 0, -1) - camera_pos);
+
+  /*
+  vec3 camera_pos = {0.5, 0.2, -1};
+  vec3 camera_forward = unit_vector(vec3(-1, 0.2, -1) - camera_pos);
+  */
 
   // Slightly different viewpoint for the ortho images
   if (is_ortho) {
@@ -103,7 +108,7 @@ int main(int argc, char **argv) {
 
   // Calculate viewport vectors
   double aspect_ratio = static_cast<double>(width) / height;
-  double focal = 1.0;
+  double focal = 2.0;
 
   double viewport_height = 1;
   if (is_ortho) {
@@ -117,22 +122,46 @@ int main(int argc, char **argv) {
   vec3 viewport_top_left = camera_pos - viewport_right / 2 - viewport_down / 2 + focal * camera_forward;
 
   // Number of multi jitter samples = n^2
-  size_t n = 4;
+  size_t n = 10;
   double n_d = n;
   Sample samples[n][n] = {};
 
   std::vector<std::unique_ptr<Hittable>> world;
 
   auto material_ground = std::make_shared<Lambertian>(color(0.8, 0.8, 0.0));
-  auto material_center = std::make_shared<Lambertian>(color(0.7, 0.3, 0.3));
-  auto material_left   = std::make_shared<Metal>(color(0.8, 0.8, 0.8));
+  auto material_center = std::make_shared<Lambertian>(color(0.1, 0.2, 0.5));
+  auto material_left   = std::make_shared<Dielectric>(1.5);
   auto material_right  = std::make_shared<Metal>(color(0.8, 0.6, 0.2));
 
   world.push_back(std::make_unique<Sphere>(point3( 0.0, -100.5, -1.0), 100.0, material_ground));
   world.push_back(std::make_unique<Sphere>(point3( 0.0,    0.0, -1.0),   0.5, material_center));
   world.push_back(std::make_unique<Sphere>(point3(-1.0,    0.0, -1.0),   0.5, material_left));
+  world.push_back(std::make_unique<Sphere>(point3(-1.0,    0.0, -1.0),  -0.45, material_left));
   world.push_back(std::make_unique<Sphere>(point3( 1.0,    0.0, -1.0),   0.5, material_right));
 
+
+
+/*
+  auto material_ground = std::make_shared<Lambertian>(color(0.8, 0.8, 0.0));
+    auto material_center = std::make_shared<Lambertian>(color(0.7, 0.3, 0.3));
+    auto material_left   = std::make_shared<Metal>(color(0.8, 0.8, 0.8));
+    auto material_right = std::make_shared<Dielectric>(1.5);
+  world.push_back(std::make_unique<Sphere>(point3(0, 0, -1), 0.5, material_center));
+  world.push_back(std::make_unique<Sphere>(point3(0, -100.5, -1), 100, material_ground));
+  world.push_back(std::make_unique<Sphere>(point3(-1.0, 0.0, -1.0), 0.5, material_left));
+  world.push_back(std::make_unique<Sphere>(point3(1.0, 0.0, -1.0), 0.5, material_right));
+  world.push_back(std::make_unique<Sphere>(point3( 1.0, 0.0, -1.0), -0.4, material_right));
+*/
+
+
+  //world.push_back(std::make_unique<Sphere>(point3( 0.0, -100.5, -1.0), 100.0, material_ground));
+  //world.push_back(std::make_unique<Sphere>(point3( 0.0,    0.0, -1.0),   0.5, material_center));
+  ////world.push_back(std::make_unique<Sphere>(point3(-1.0,    0.0, -1.0),   0.5, material_left));
+  //world.push_back(std::make_unique<Sphere>(point3(-1.0,    0.0, -1.0),  -0.4, material_left));
+  //world.push_back(std::make_unique<Sphere>(point3( 1.0,    0.0, -1.0),   0.5, material_right));
+
+  
+  
   // Convert to list of pointers for bvh
   std::vector<Hittable*> world_ptrs;
   for (size_t i = 0; i < world.size(); ++i) {
@@ -183,7 +212,7 @@ int main(int argc, char **argv) {
           }
           // Change to use slower approach
           //color_sum += shoot_ray_slow(ray, world);
-          color_sum += shoot_ray(ray, bvh_root, 20);
+          color_sum += shoot_ray(ray, bvh_root, 30);
         }
       }
 

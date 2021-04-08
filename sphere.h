@@ -47,7 +47,7 @@ class Sphere : public Hittable {
 
       res.hit = true;
       res.point = r.at(res.t);
-      res.set_normal(r, unit_vector(res.point - center));
+      res.set_normal(r, (res.point - center) / radius);
       res.material = material;
 
       return res;
@@ -56,8 +56,8 @@ class Sphere : public Hittable {
     // Bounding box of sphere
     virtual AABB aabb() {
       return {
-        center - vec3(radius, radius, radius),
-        center + vec3(radius, radius, radius)
+        center - vec3(fabs(radius), fabs(radius), fabs(radius)),
+        center + vec3(fabs(radius), fabs(radius), fabs(radius))
       };
     }
   
